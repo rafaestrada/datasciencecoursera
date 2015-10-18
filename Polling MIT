@@ -1,0 +1,68 @@
+polling <- read.csv('PollingData.csv')
+str(polling)
+table(polling$Year) ##Vemos que hay menos instances que las esperadas, con table podemos ver que psa
+##después notamos NA
+
+##Podemos borralos, borrar la variable, llena los valores con promedios
+##multiple imputation se utiliza para que los valores se representen 
+install.packages('mice')
+library(mice)
+##generamos un nuevo data set, pero con las variables que no interesna
+
+simple <- polling[c("Rasmussen", "SurveyUSA", "PropR", "DiffCount")]
+summary(simple)
+
+set.seed(144)
+imputed <- complete(mice(simple)) ##se corren imputaciones y se sustituyen los valores perdidos
+summary(imputed)
+
+##vamos a regresar el imputed en el original data frame
+
+polling$Rasmussen=imputed$Rasmussen
+polling$SurveyUSA=imputed$SurveyUSA
+
+### EMPEZAMOs, DIVIDMOS EN TRAIN Y TEST
+
+Train <- subset(polling, Year ==2004 | Year==2008)
+Test <- subset(polling, Year==2012)
+
+table(Train$Republican) ## se hace para sacar la base line identificamos el outcome más frecuente, y sacamos 
+## scamoas el ACCURACY sacando que porcnetaje es el outcome más frecuente del total de casos
+##Para este caso de 53%
+##Necesitamos un mejor base line este es demasiado malo
+## lo que haremos generar un base line a partir de la encuesta, es decir que el que una encuesta diga que va a ganar asumiremos que va a ganar.
+##usaremos sign() que para numeros positivos regresa 1, para negativos -1, para cero cero.
+
+table(sign(Train$Rasmussen))## genera una tabla con los valores de sign sobre el TRain
+table(Train$Republican, sign(Train$Rasmussen)) 
+
+
+## siempre hay que considerar la posibilidad de multicolinealidad en este aso es especialmente posible por todas miden la misma cosa
+cor(Train[c('Rasmussen', 'SurveyUSA', 'PropR', 'DiffCount', 'Republican')])
+
+##Al observar la matriz de correlación contramos que PropR tiene los valores de correlación más altos con respcto a todas las demas variables. Por lo que
+##Podemos intentar elegirlo como la única variable predictiva y realizar el modelo
+
+model1 <- glm(Republican~ PropR, data=Train, family=binomial)
+summary(model1)
+
+##evaluamos en testing
+
+pred1=predict(model1, type='response')
+table(Train$Republican, pred1>.5) ##Observamos que no mejora demasiado el base line
+
+##vemos si podemos mejorar con otra variable
+model2<-glm(Republican~  SurveyUSA + DiffCount, data=Train, family=binomial)
+pred2 <- predict(model2, type='response')
+table(Train$Republican, pred2>=.5)
+
+
+###pasamos al testing
+table(Test$Republican, sign(Test$Rasmussen)) ##se aplica la tabla para el base line igual qeu en el train
+TestPrediction=predict(model2, newdata=Test, type='response')
+table(Test$Republican, TestPrediction>=.5)
+subset(Test,  TestPrediction>=.5 & Republican==0) ## identificamos  cual es el error
+
+subset(Test, TestPrediction>=.5) ##Åquí imprimimos los estodos con predicción de REPUBLICAN
+subset(Test, TestPrediction<.5) ##Åquí imrimimos los predicdcion DEMOCRAT 
+##∏odemos ver el error en florida, con predicción 1, y valor 0
